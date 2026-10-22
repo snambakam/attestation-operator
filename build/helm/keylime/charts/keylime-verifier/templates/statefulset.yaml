@@ -18,6 +18,9 @@ spec:
       {{- end }}
       labels:
         {{- include "verifier.selectorLabels" . | nindent 8 }}
+        {{- if include "keylime.postgres.keyVault" . }}
+        azure.workload.identity/use: "true"
+        {{- end }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -31,6 +34,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "verifier.configMap" . }}
+            {{- if include "keylime.postgres.use" . }}
+            - secretRef:
+                name: {{ include "keylime.postgres.secret" . }}
+            {{- end }}
           env:
             - name: KEYLIME_VERIFIER_UUID
               valueFrom:
@@ -57,6 +64,12 @@ spec:
             - name: certs
               mountPath: /var/lib/keylime/cv_ca/
               readOnly: true
+            {{- if include "keylime.postgres.keyVault" . }}
+            # Mounting the CSI volume is what makes the driver sync the Kubernetes secret used by envFrom.
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
@@ -64,6 +77,14 @@ spec:
           secret:
             defaultMode: 420
             secretName: "{{ include "verifier.ca.secret" . }}"
+        {{- if include "keylime.postgres.keyVault" . }}
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ include "keylime.postgres.secretProviderClass" . }}
+        {{- end }}
         {{- if and .Values.global.database.sqlite.enable .Values.global.database.sqlite.persistence.verifier.create }}
         - name: db-disk
           persistentVolumeClaim:

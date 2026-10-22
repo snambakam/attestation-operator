@@ -17,6 +17,9 @@ spec:
       {{- end }}
       labels:
         {{- include "registrar.selectorLabels" . | nindent 8 }}
+        {{- if include "keylime.postgres.keyVault" . }}
+        azure.workload.identity/use: "true"
+        {{- end }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -30,6 +33,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "registrar.configMap" . }}
+            {{- if include "keylime.postgres.use" . }}
+            - secretRef:
+                name: {{ include "keylime.postgres.secret" . }}
+            {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: '{{- include "registrar.image.repository" . }}:{{- include "registrar.image.tag" .}}'
@@ -54,6 +61,12 @@ spec:
             - name: certs
               mountPath: /var/lib/keylime/cv_ca/
               readOnly: true
+            {{- if include "keylime.postgres.keyVault" . }}
+            # Mounting the CSI volume is what makes the driver sync the Kubernetes secret used by envFrom.
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
@@ -61,6 +74,14 @@ spec:
           secret:
             defaultMode: 420
             secretName: "{{ include "registrar.ca.secret" . }}"
+        {{- if include "keylime.postgres.keyVault" . }}
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ include "keylime.postgres.secretProviderClass" . }}
+        {{- end }}
         {{- if and .Values.global.database.sqlite.enable .Values.global.database.sqlite.persistence.registrar.create }}
         - name: db-disk
           persistentVolumeClaim:

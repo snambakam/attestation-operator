@@ -124,10 +124,51 @@ global:
           subPath: ""
     # postgres enables a PostgreSQL database backend
     postgres:
-      # enable activates the PostgreSQL database backend
-      # This will pull in a PostgreSQL helm chart for deployment.
-      # TODO: implement
+      # enable would deploy an in-cluster PostgreSQL server. Not implemented; use 'external' instead.
       enable: false
+      # external uses an existing PostgreSQL server (for example Azure Database for PostgreSQL Flexible Server)
+      # for both the verifier and the registrar. 'mysql' must not be enabled at the same time.
+      # Replicas of the verifier and registrar are no longer limited to 1 when this is true.
+      external: false
+      # host is the server name, for example myserver.postgres.database.azure.com. Required when external is true
+      # (unless keyVault or existingSecret is used).
+      host: ""
+      port: 5432
+      # sslmode is passed to the PostgreSQL driver. Azure Database for PostgreSQL requires TLS, so "require" or stronger.
+      sslmode: require
+      # username is the login used by the verifier and registrar. It is percent-encoded into the connection URL.
+      username: keylime
+      # password is only used when neither keyVault nor existingSecret is used. Prefer keyVault to keep it out of
+      # Helm values.
+      password: ""
+      # registrarDatabase and verifierDatabase must already exist on the server.
+      registrarDatabase: keylime_registrar
+      verifierDatabase: keylime_verifier
+      # existingSecret is the name of a Secret with the keys KEYLIME_REGISTRAR_DATABASE_URL and
+      # KEYLIME_VERIFIER_DATABASE_URL, each a full SQLAlchemy URL such as
+      # postgresql+psycopg2://user:pass@host:5432/db?sslmode=require (password percent-encoded).
+      # When set, host, username, password and the database names above are ignored.
+      existingSecret: ""
+      # keyVault reads the two connection URLs from Azure Key Vault instead, using the Azure Key Vault provider
+      # for the Secrets Store CSI Driver (the AKS "azure-keyvault-secrets-provider" add-on) and workload identity.
+      # Prerequisites, which this chart does not create:
+      #   - the AKS cluster has the OIDC issuer and workload identity enabled, and the CSI add-on installed
+      #   - a user-assigned managed identity with the "Key Vault Secrets User" role on the vault
+      #   - a federated credential on that identity for each of the two service accounts used by the
+      #     registrar and verifier: system:serviceaccount:<namespace>:<service account name>
+      #   - two Key Vault secrets whose values are the full SQLAlchemy URLs (see existingSecret above)
+      # existingSecret and password must be empty when this is enabled.
+      keyVault:
+        enabled: false
+        # name of the Key Vault (not the full URL)
+        name: ""
+        # tenantId of the Microsoft Entra tenant that owns the vault
+        tenantId: ""
+        # clientId of the user-assigned managed identity used for workload identity
+        clientId: ""
+        # registrarUrlSecretName and verifierUrlSecretName are the Key Vault secrets holding the URLs
+        registrarUrlSecretName: keylime-registrar-database-url
+        verifierUrlSecretName: keylime-verifier-database-url
     # mysql enables a MySQL database backend
     mysql:
       # enable activates the MySQL database backend

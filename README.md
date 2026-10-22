@@ -168,6 +168,82 @@ mysql:
     externalPassword: "TikBue7mQS"
 ```
 
+### Registrars and verifiers: using an external PostgreSQL server
+
+An external PostgreSQL server (for example Azure Database for PostgreSQL
+Flexible Server) can be used for the `verifier` and `registrar`. Create the two
+databases beforehand. The chart builds the connection URLs (percent-encoding
+the user name and password) into a `Secret`, which the verifier and registrar
+pods load as environment variables. Replicas are no longer limited to 1.
+
+```
+global:
+  database:
+    postgres:
+      external: true
+      host: "myserver.postgres.database.azure.com"
+      sslmode: require
+      username: "keylime"
+      password: "<password>"
+      registrarDatabase: keylime_registrar
+      verifierDatabase: keylime_verifier
+```
+
+To keep the password out of Helm values, create a `Secret` yourself with the keys
+`KEYLIME_REGISTRAR_DATABASE_URL` and `KEYLIME_VERIFIER_DATABASE_URL` (each a full
+SQLAlchemy URL such as
+`postgresql+psycopg2://user:pass@host:5432/db?sslmode=require`) and reference it:
+
+```
+global:
+  database:
+    postgres:
+      external: true
+      existingSecret: keylime-postgres-urls
+```
+
+PostgreSQL and MySQL cannot be enabled at the same time. An in-cluster
+PostgreSQL server (`global.database.postgres.enable`) is not implemented.
+
+### Registrars and verifiers: reading the PostgreSQL URLs from Azure Key Vault
+
+To keep the database credentials out of Helm values and out of the chart, the
+connection URLs can be read from Azure Key Vault with the Azure Key Vault
+provider for the Secrets Store CSI Driver (the AKS `azure-keyvault-secrets-provider`
+add-on) and workload identity. The chart creates a `SecretProviderClass` that
+syncs the Key Vault secrets into the Kubernetes secret the verifier and registrar
+pods already read, mounts the CSI volume in both pods, and sets the workload
+identity label and service account annotation.
+
+The chart does not create any Azure resources. You need:
+
+- An AKS cluster with the OIDC issuer and workload identity enabled, and the
+  `azure-keyvault-secrets-provider` add-on installed.
+- A user-assigned managed identity with the `Key Vault Secrets User` role on the vault.
+- A federated credential on that identity for each of the two service accounts,
+  `system:serviceaccount:<namespace>:<release>-keylime-registrar` and
+  `system:serviceaccount:<namespace>:<release>-keylime-verifier`.
+- Two Key Vault secrets whose values are the full SQLAlchemy URLs, with no
+  trailing newline and the password percent-encoded.
+
+```
+global:
+  database:
+    postgres:
+      external: true
+      keyVault:
+        enabled: true
+        name: myvault
+        tenantId: 00000000-0000-0000-0000-000000000000
+        clientId: 11111111-1111-1111-1111-111111111111
+        registrarUrlSecretName: keylime-registrar-database-url
+        verifierUrlSecretName: keylime-verifier-database-url
+```
+
+`existingSecret` and `password` must not be set together with `keyVault`. The
+Kubernetes secret is only created while a pod mounts the CSI volume, which the
+verifier and registrar pods do.
+
 ### Registars and verifiers: overriding site specifig configuration
 
 
